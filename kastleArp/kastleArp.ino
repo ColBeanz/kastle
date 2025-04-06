@@ -90,7 +90,7 @@ const PROGMEM uint16_t dcoTable[97] = { //tuned pitches
 //001000100001 545 //Fdur
 //001000100100 548 //Dmol
 
-const uint16_t scales[8] = {548, 548, 545, 529, 145, 2192, 2180, 2180};
+//const uint16_t scales[8] = {548, 548, 545, 529, 145, 2192, 2180, 2180};
 /*
 const uint8_t _scales[8][3]={
   {2,5,9}, //dmol
@@ -104,8 +104,16 @@ const uint8_t _scales[8][3]={
 };
 */
 const PROGMEM uint8_t _scales[24]={2,5,9,2,5,9,0,5,9,0,4,9,0,4,7,4,7,11,2,7,11,2,7,11};
+//010010101001 1193 // Minor Pentatonic
+//010110101101 1453 // Natual Minor
+//001010010101 661 // Major Pentatonic
+//101010110101 2741 // Major
 
-uint16_t _useScale = scales[4]; //scales[4];
+
+// scales are encoded as bit flags
+// see above for the integer values for the chords/scales
+const uint16_t scales[4] = {1193, 1453, 661, 2741};
+uint16_t _useScale = scales[0]; //scales[4];
 uint16_t pitchAverage, lastPitchAverage;
 uint8_t semitone, lastSemitone;
 uint8_t root;
@@ -401,13 +409,13 @@ void loop() {
   if (bootMode) { // BOOT MODE
     decayVolume = 255;
     _xor = 0;
-    //_useScale = scales[4];
+    _useScale = scales[4];
     root=4;
     if (analogValues[0] > HIGH_THRES) {
       fineTune = analogValues[WS_2];
       transpose = map( analogValues[WS_1], 0, 255, 0, 13);
-      //pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
-       pitch= gridToNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+      pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+      //pitch= gridToNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
       setSemitone( pitch);
     }
     else {
@@ -439,7 +447,7 @@ void loop() {
       }
     }
     
-   // _useScale = scales[root];
+   _useScale = scales[root];
     if (lastAnalogChannelRead == WS_1 && lastAnalogValues[WS_1] != analogValues[WS_1]) {
       _xor = analogValues[WS_1];
     }
@@ -461,7 +469,8 @@ void loop() {
     if(newWindow==curveMap(constrain(pitchAverage-2,0,255), PITCHMAP_POINTS, pitchMap)) window=newWindow;
    }
    
-    pitch= gridToNote(window);
+  pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+  //pitch= gridToNote(window);
     
     if (analogValues[WS_2] < 100) { 
       //when decay CCW
