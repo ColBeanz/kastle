@@ -92,6 +92,26 @@ const PROGMEM uint16_t dcoTable[97] = { //tuned pitches
 //001000100001 545 //Fdur
 //001000100100 548 //Dmol
 
+const uint16_t scales[8] = {548, 548, 545, 529, 145, 2192, 2180, 2180};
+/*
+const uint8_t _scales[8][3]={
+  {2,5,9}, //dmol
+  {2,5,9}, //dmol
+  {0,5,9}, //fdur
+  {0,4,9}, //amol
+  {0,4,7}, //cdur
+  {4,7,11}, //emol
+  {2,7,11}, //gdur
+  {2,7,11}, //gdur
+};
+*/
+// const PROGMEM uint8_t _scales[24]={2,5,9,2,5,9,0,5,9,0,4,9,0,4,7,4,7,11,2,7,11,2,7,11};
+
+const PROGMEM uint8_t _scales[21] = { // indexes into dcoTable
+  0, 0, 3, 5, 7, 7, 10, // minor pentatonic
+  0, 2, 3, 5, 7, 8, 10, // natural minor
+  0, 2, 4, 5, 7, 9, 11  // major
+};
 
 //010010101001 1193 // Minor Pentatonic
 //010110101101 1453 // Natual Minor
@@ -109,7 +129,8 @@ uint8_t root;
 uint8_t lastPitch, pitch;
 uint8_t transpose = 0; //default used when formating memory
 uint8_t fineTune = 120; //default used when formating memory
-const uint8_t rootToPitch[8] = {2, 2, 5, 9, 0, 4, 7, 7}; //bass tone for each chord
+//const uint8_t rootToPitch[8] = {2, 2, 5, 9, 0, 4, 7, 7}; //bass tone for each chord
+const uint8_t rootToPitch[8] = {0, 0, 0}; //bass tone for each chord
 
 //envelope related
 uint8_t decayVolume;
@@ -269,6 +290,16 @@ void setFrequency2(uint16_t input) {
   frequency2 = input;
 }
 
+
+uint8_t gridToNote(uint8_t _note) {
+  uint8_t _octave=_note/3;
+  
+ // _note=_scales[root][_note%3] + (_octave*12) ;//+ transpose
+  _note=pgm_read_word_near(_scales + (root*7) +(_note%7)) + (_octave*12) ;//+ transpose
+   return _note;
+  
+}
+
 uint8_t quantizeNote(uint8_t _note) {
   uint8_t _semitone = _note % 12;
   if (bitRead(_useScale, (_semitone) % 12) ) {
@@ -377,11 +408,16 @@ void loop() {
   if (bootMode) { // BOOT MODE
     decayVolume = 255;
     _xor = 0;
-    _useScale = scales[0];
+    //_useScale = scales[4];
+    root=0;
     if (analogValues[0] > HIGH_THRES) {
       fineTune = analogValues[WS_2];
       transpose = map( analogValues[WS_1], 0, 255, 0, 13);
-      pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+      //pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+      pitch= gridToNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+
+    //_useScale = scales[0];
+
       setSemitone( pitch);
     }
     else {
@@ -391,12 +427,29 @@ void loop() {
     }
   }
   else { // NORMAL LOOP
-    if (analogValues[0] < (LOW_THRES - 10)) root = 1;
-    else if (analogValues[0] < LOW_THRES) root = 2;
-    else if (analogValues[0] > HIGH_THRES + 3) root = 3;
-    else if (analogValues[0] > HIGH_THRES - 6) root = 3;
-    else root = 0;
-    _useScale = scales[root];
+    if (analogValues[0] < (LOW_THRES /*- 10*/)) chord = 1; //f major
+    //else if (analogValues[0] < LOW_THRES) chord = 3;  // a minor
+    else if (analogValues[0] > HIGH_THRES /*+ 3*/) chord = 2;  // g major
+    //else if (analogValues[0] > HIGH_THRES - 3) chord = 5; //e minor
+    else chord = 0; //c major
+    
+    if(chord>root) root=chord;
+    else if(root-chord>1) root=chord;
+    else{
+      if(chord-root>1) root=chord;
+      else{
+        
+         if (analogValues[0] < ((LOW_THRES /*- 10*/)-2)) chord = 1; //f major
+         //else if (analogValues[0] < (LOW_THRES-1)) chord = 3;  // a minor
+         else if (analogValues[0] > (HIGH_THRES /*+ 3*/ -2)) chord = 2;  // g major
+         //else if (analogValues[0] > (HIGH_THRES - 3-1)) chord = 5; //e minor
+         else chord = 0; //c major
+        
+        if(root!=chord) root=chord;
+      }
+    }
+    
+    //_useScale = scales[root];
     if (lastAnalogChannelRead == WS_1 && lastAnalogValues[WS_1] != analogValues[WS_1]) {
       _xor = analogValues[WS_1];
     }
@@ -405,7 +458,22 @@ void loop() {
     }
 
     lastPitch = pitch;
-    pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+    //
+   // pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+   
+   //avoiding ripples =going down or a bigger step will be imediate, but going one step up requires overcoming 20% window
+   lastWindow=window;
+   uint8_t newWindow= curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap);// map(pitchAverage, 0,255,0,22);
+   if(lastWindow>newWindow)  window=newWindow;
+   else if(newWindow-lastWindow>1) window=newWindow;
+   else{
+   // if(newWindow==map(constrain(pitchAverage-3,0,255), 0,255,0,22)) window=newWindow;
+    if(newWindow==curveMap(constrain(pitchAverage-2,0,255), PITCHMAP_POINTS, pitchMap)) window=newWindow;
+   }
+   
+  //pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+  pitch= gridToNote(window);
+
     
     if (analogValues[WS_2] < 100) { 
       //when decay CCW
