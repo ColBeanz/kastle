@@ -1,4 +1,4 @@
- /*
+/*
   KASTLE ARP
   -melodic beast
   -product page:
@@ -9,9 +9,11 @@
   this is usefull for creating variating patterns and have interference patterns between the lfo rate and decay of the envelope
   NOTE knob selects a note
   TIMBRE knob adds XOR timbral modulation
-  CHORD patchpoint accesses 3 different chords from lowest voltage to highest they are the following (when root note is C)
+  CHORD patchpoint accesses 5 different chords from lowest voltage to highest they are the following (when root note is C)
   -F major "-" F A C
+  -A minor (in between) A C E
   -C major (unconnected) C E G
+  - E minor (in between) E G B
   - G major "+" G B D
 
   
@@ -61,7 +63,7 @@
 #define WS_1 3
 #define WS_2 1
 
-const unsigned char PROGMEM sinetable[128] = {
+const char PROGMEM sinetable[128] = {
   0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 4, 5, 5, 6, 7, 9, 10, 11, 12, 14, 15, 17, 18, 20, 21, 23, 25, 27, 29, 31, 33, 35, 37, 40, 42, 44, 47, 49, 52, 54, 57, 59, 62, 65, 67, 70, 73, 76, 79, 82, 85, 88, 90, 93, 97, 100, 103, 106, 109, 112, 115, 118, 121, 124,
   128, 131, 134, 137, 140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173, 176, 179, 182, 185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215, 218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 238, 240, 241, 243, 244, 245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254, 254, 255, 255, 255,
 };
@@ -70,7 +72,7 @@ const unsigned char PROGMEM sinetable[128] = {
 unsigned char wavetable[256];
 
 
-//tuning related
+//tuning related - 8 octaves of 12 tones
 const PROGMEM uint16_t dcoTable[97] = { //tuned pitches
   69 /*C*/, 73, 77, 81, 86, 91, 96, 102 /*G*/, 108, 115, 122, 129,
   137 /*C*/, 145, 153, 162, 172, 182, 193, 205 /*G*/, 217, 230, 243, 258,
@@ -111,12 +113,20 @@ const PROGMEM uint8_t _scales[21] = { // indexes into dcoTable
   0, 2, 4, 5, 7, 9, 11  // major
 };
 
-uint16_t _useScale = scales[4]; //scales[4];
+//010010101001 1193 // Minor Pentatonic
+//010110101101 1453 // Natual Minor
+//001010010101 661 // Major Pentatonic
+//101010110101 2741 // Major
+
+
+// scales are encoded as bit flags
+// see above for the integer values for the chords/scales
+const uint16_t scales[4] = {1193, 1453, 661, 2741};
+uint16_t _useScale = scales[0]; //scales[4];
 uint16_t pitchAverage, lastPitchAverage;
 uint8_t semitone, lastSemitone;
 uint8_t root;
 uint8_t lastPitch, pitch;
-uint8_t lastWindow, window;
 uint8_t transpose = 0; //default used when formating memory
 uint8_t fineTune = 120; //default used when formating memory
 //const uint8_t rootToPitch[8] = {2, 2, 5, 9, 0, 4, 7, 7}; //bass tone for each chord
@@ -161,15 +171,9 @@ uint8_t analogChannelSequence[6] = {0, 1, 0, 2, 0, 3};
 uint8_t analogChannelReadIndex;
 
 #define PITCHMAP_POINTS 5
-/*
 uint16_t pitchMap[10] = {
   0, 63, 127, 191, 235,   0, 40, 50, 60, 84
 };
-*/
-uint16_t pitchMap[10] = {
-  0, 30, 60, 120, 250,   0, 6, 11, 16, 22
-};
-
 
 uint32_t curveMap(uint8_t value, uint8_t numberOfPoints, uint16_t * tableMap) {
   uint32_t inMin = 0, inMax = 255, outMin = 0, outMax = 255;
@@ -316,10 +320,7 @@ void setSemitone(uint16_t _semitone) {
   int semiSize = (pgm_read_word_near(dcoTable + _semitone + 1) << 1) - (pgm_read_word_near(dcoTable + _semitone) << 1);
   int fine = map(fineTune, 0, 255, -semiSize, semiSize);
   setFrequency((pgm_read_word_near(dcoTable + _semitone + transpose) << 1) + fine);
-  semiSize = (pgm_read_word_near(dcoTable + rootToPitch[root]+1+12) ) - (pgm_read_word_near(dcoTable + rootToPitch[root]+12) );
-  int bassFine = map(fineTune, 0, 255, -semiSize, semiSize);
- // setFrequency2((pgm_read_word_near(dcoTable + rootToPitch[root] + transpose) << 1) + bassFine);
-   setFrequency2((pgm_read_word_near(dcoTable + rootToPitch[root] + transpose+12) ) + bassFine);
+  setFrequency2((pgm_read_word_near(dcoTable + rootToPitch[root] + transpose) << 1) + fine);
 }
 
 void setFrequency(uint16_t input) {
@@ -327,7 +328,7 @@ void setFrequency(uint16_t input) {
 }
 
 
-void trigger() {
+uint8_t trigger() {
   decayVolume = 255;//, decayVolume2 = 150;
 }
 
@@ -392,7 +393,7 @@ void setup()  { //happends at the startup
   startConversion();
   _delay_us(100);
   
-  while (startupRead < 12 * 4) { //wait for all analog inputs to be read
+  while (startupRead < 12) { //wait for all analog inputs to be read
     loop();
   }
   
@@ -402,7 +403,6 @@ void setup()  { //happends at the startup
 
 }
 
-uint8_t chord;
 void loop() {
 
   if (bootMode) { // BOOT MODE
@@ -415,6 +415,9 @@ void loop() {
       transpose = map( analogValues[WS_1], 0, 255, 0, 13);
       //pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
       pitch= gridToNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
+
+    //_useScale = scales[0];
+
       setSemitone( pitch);
     }
     else {
@@ -470,6 +473,7 @@ void loop() {
    
   //pitch = quantizeNote(curveMap(pitchAverage, PITCHMAP_POINTS, pitchMap));
   pitch= gridToNote(window);
+
     
     if (analogValues[WS_2] < 100) { 
       //when decay CCW
@@ -498,16 +502,12 @@ ISR(TIMER1_COMPA_vect)  // render both oscillators in the interupt
 {
   OCR0A = sample;
   OCR0B = sample2;
-  
-  _phase2 += frequency2;
-  uint8_t lastSample2=sample2;
-  sample2 = (wavetable[_phase2 >> 8] +lastSample2)>>1; // ^ _xor; //very simple lowpass to compensate for the low-res sinewave
-  
   _phase += frequency;
+  _phase2 += frequency2;
   _phs = _phase >> 8;
   sample = ((wavetable[_phs] ^ _xor) * runningDecay) >> 8; 
   //  sample = (wavetable[_phs] ^ _xor) ;
-  
+  sample2 = wavetable[_phase2 >> 8] ; // ^ _xor;
 }
 
 
@@ -546,29 +546,25 @@ uint16_t getConversionResult() {
   uint16_t result = ADCL;
   return result | (ADCH << 8);
 }
-
-
-#define AVG_RUNS 4
-uint8_t analogCount[4] = {0,0,0,0};
-uint16_t analogRun[4][AVG_RUNS];
+uint8_t pitchCount = 0;
+uint16_t pitchRun[4];
 
 ISR(ADC_vect) { // interupt triggered ad completion of ADC counter
   startupRead++;
   if (!firstRead) { // discard first reading due to ADC multiplexer crosstalk
     //update values and remember last values
     lastAnalogValues[analogChannelRead] = analogValues[analogChannelRead];
-    uint16_t res = getConversionResult();
-
-    analogCount[analogChannelRead] = (analogCount[analogChannelRead] + 1) % AVG_RUNS;
-    analogRun[analogChannelRead][analogCount[analogChannelRead]] = res;
-    uint16_t avgSum = 0;
-    for (uint8_t i = 0; i < AVG_RUNS; i++) {
-        avgSum += analogRun[analogChannelRead][i] ;
-    }
-    analogValues[analogChannelRead] = (avgSum / AVG_RUNS) >> 2;
+    analogValues[analogChannelRead] = getConversionResult() >> 2;
     if (analogChannelRead == PITCH) {
-        lastPitchAverage = pitchAverage;
-        pitchAverage = analogValues[analogChannelRead];
+      lastPitchAverage = pitchAverage;
+      pitchCount++;
+      if (pitchCount > 3) pitchCount = 0;
+      pitchRun[pitchCount] = analogValues[PITCH];
+      uint16_t pitchSum = 0;
+      for (uint8_t i = 0; i < 4; i++) {
+        pitchSum += pitchRun[i];
+      }
+      pitchAverage = pitchSum >> 2;
     }
     //set ADC MULTIPLEXER to read the next channel
     lastAnalogChannelRead = analogChannelRead;
